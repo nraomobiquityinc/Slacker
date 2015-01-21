@@ -1,19 +1,22 @@
 'use strict';
 
 // NPM modules
-var _           = require('lodash');
-var fs          = require('fs');
-var https       = require('https');
+var _ = require('lodash');
+var fs = require('fs');
+var https = require('https');
 var querystring = require('querystring');
 
 // Libraries
-var config      = require(__dirname + '/library/config');
-var log         = require(__dirname + '/library/log.js');
-var parse       = require(__dirname + '/library/parse.js');
+var config = require(__dirname + '/library/config');
+var log = require(__dirname + '/library/log.js');
+var parse = require(__dirname + '/library/parse.js');
+
+// Helpers
+var authenticationHelper = require(__dirname + '/authenticationHelper.js');
 
 exports.actions = [];
 
-exports.setup = function setup (callback) {
+exports.setup = function setup(callback) {
   var setup;
   var x;
 
@@ -25,7 +28,7 @@ exports.setup = function setup (callback) {
       require(__dirname + '/actions/' + file);
     });
 
-    _.each(exports.actions, function runSetup (action) {
+    _.each(exports.actions, function runSetup(action) {
       setup = action.setup;
       if (setup && _.isFunction(setup)) setup(function (error, data) {
         console.log('Running setup of ' + file);
@@ -44,7 +47,7 @@ exports.setup = function setup (callback) {
   });
 };
 
-exports.processRequest = function  processRequest (request, response) {
+exports.processRequest = function processRequest(request, response) {
   var
     actionFound,
     commands,
@@ -55,8 +58,7 @@ exports.processRequest = function  processRequest (request, response) {
     requestText,
     responseMethod,
     responseText,
-    VARIABLES
-  ;
+    VARIABLES;
 
   input = request.body.text;
 
@@ -70,7 +72,7 @@ exports.processRequest = function  processRequest (request, response) {
     'DOMAIN': request.body.team_domain
   };
 
-  _.each(VARIABLES, function (value, key){
+  _.each(VARIABLES, function (value, key) {
     regex = new RegExp('%24' + key, 'gm');
     input = input.replace(regex, value);
   });
@@ -82,50 +84,67 @@ exports.processRequest = function  processRequest (request, response) {
   requestText;
   if (request.body.trigger_word)
     requestText = parse.slackText(input.substring(request.body.trigger_word.length + 1, input.length));
-  else {// command
+  else { // command
     requestText = decodeURIComponent(input.replace(/\+/g, '%20'));
   }
   log.info('bot processing request', request.body, request.id);
 
   outgoingData = {
-    channel_id:   request.body.channel_id,
+    channel_id: request.body.channel_id,
     channel_name: request.body.channel_name,
-    team_domain:  request.body.team_domain,
-    team_id:      request.body.team_id,
-    text:         requestText,
-    timestamp:    request.body.timestamp,
-    user_id:      request.body.user_id,
-    user_name:    request.body.user_name
+    team_domain: request.body.team_domain,
+    team_id: request.body.team_id,
+    text: requestText,
+    timestamp: request.body.timestamp,
+    user_id: request.body.user_id,
+    user_name: request.body.user_name
   };
 
   responseText;
   actionFound;
   pipedResponse = null;
 
-
   _.each(commands, function (command) {
-    actionFound = _.find(exports.actions, {name: command.name});
+    actionFound = _.find(exports.actions, {
+      name: command.name
+    });
 
     // Actions desn't exist. Inform the user.
     if (!actionFound) {
       log.error('no bot action found', requestText, request.id);
       responseText = 'Invalid action, try `help`.';
       response.statusCode = 200;
-      response.end(formatResponse(responseText));
+      return response.end(formatResponse(responseText));
     }
 
     // If the action hasn't completed in time, let the user know.
-    setTimeout(function() {
+    setTimeout(function () {
       if (!responseText) {
         log.error('bot action timed out', actionFound.name, request.id);
         response.statusCode = 500;
-        response.end();
+        return response.end();
       }
     }, config.timeout);
 
     outgoingData.command = _.clone(command);
     outgoingData.pipedResponse = _.clone(pipedResponse);
-    actionFound.execute(outgoingData, function (actionResponse) {
+
+    if (actionFound.requiresAuth) {
+      authenticationHelper.checkUserIsAuthenticated(outgoingData, response, function(data){
+        actionFound.execute(data, actionCallback);
+      });
+    }
+    else{
+      actionFound.execute(outgoingData, actionCallback);
+    }
+
+    function formatResponse(response) {
+        return (request.body.trigger_word) ? JSON.stringify({
+          text: response
+        }) : response;
+    }
+
+    function actionCallback (actionResponse) {
       responseText = actionResponse;
 
       // No data back form the action.
@@ -154,31 +173,34 @@ exports.processRequest = function  processRequest (request, response) {
 
       // User is ending their command with the `>`. Assume current room.
       if (command.redirects && !command.redirectTo.length) {
-        command.redirectTo.push({ type: 'channel', name: request.body.channel_name });
+        command.redirectTo.push({
+          type: 'channel',
+          name: request.body.channel_name
+        });
       }
 
       // If the response should be redirected, then do so
       if (command.redirectTo.length > 0) {
         _.each(command.redirectTo, function (redirect) {
           switch (redirect.type) {
-            case 'user':
-              exports.sendMessage(responseText, '@' + redirect.name);
-              break;
+          case 'user':
+            exports.sendMessage(responseText, '@' + redirect.name);
+            break;
 
-            case 'channel':
-              exports.sendMessage(responseText, '#' + redirect.name);
-              break;
+          case 'channel':
+            exports.sendMessage(responseText, '#' + redirect.name);
+            break;
 
-            case 'group':
-              exports.sendMessage(responseText, '#' + redirect.name);
-              break;
+          case 'group':
+            exports.sendMessage(responseText, '#' + redirect.name);
+            break;
 
-            case 'file':
-              // Todo file creation/editing
-              break;
+          case 'file':
+            // Todo file creation/editing
+            break;
 
-            default:
-              break;
+          default:
+            break;
           }
         });
         return true;
@@ -189,14 +211,8 @@ exports.processRequest = function  processRequest (request, response) {
       log.info('bot successfully responded', {}, request.id);
 
       return true;
-    });
-
+    }
   });
-
-  function formatResponse (response) {
-
-    return (request.body.trigger_word) ? JSON.stringify({text: response}) : response;
-  }
 };
 
 exports.addAction = function (action) {
@@ -205,7 +221,9 @@ exports.addAction = function (action) {
     return false;
   }
 
-  var existing = _.find(exports.actions, {name: action});
+  var existing = _.find(exports.actions, {
+    name: action
+  });
 
   if (existing) {
     log.error('Bot action trigger collision', action.trigger);

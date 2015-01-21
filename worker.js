@@ -6,6 +6,7 @@ var url = require('url')
 var config = require(__dirname + '/library/config')
 var router = require(__dirname + '/router.js')
 var bot = require(__dirname + '/bot.js')
+var authenticationHelper = require(__dirname + '/authenticationHelper.js')
 
 var id = require(__dirname + '/library/id.js')
 var log = require(__dirname + '/library/log.js')
@@ -83,7 +84,10 @@ module.exports = function() {
               return
             }
           } else if(request.method.toLowerCase() === 'get') {
-            response.end('Slacker is running.');
+              if(request.url.pathname === '/oauthcallback')
+                  return authenticationHelper.handleOauthCallback(request, response);
+              else
+                response.end('Slacker is running.');
           }
           request.data = {}
 
