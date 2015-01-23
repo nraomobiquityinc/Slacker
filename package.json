@@ -33,9 +33,12 @@
   ],
   "license": "ISC",
   "dependencies": {
+    "body-parser": "^1.10.2",
+    "domain": "0.0.1",
+    "express": "^4.11.1",
     "lodash": "~2.4.1",
-    "slack-node": "0.0.9",
     "redis": "0.12.1",
+    "slack-node": "0.0.9",
     "superagent": "0.21.0"
   },
   "devDependencies": {

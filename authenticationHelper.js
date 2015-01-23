@@ -5,10 +5,12 @@
 'use strict';
 
 var config = require(__dirname + '/library/config');
-var log = require(__dirname + '/library/log.js')
 var https = require('https');
+var log = require(__dirname + '/library/log.js')
+var parse = require(__dirname + '/library/parse.js')
 var redis = require('redis');
 var redisClient = redis.createClient();
+var url = require('url')
 
 exports.checkUserIsAuthenticated = function(data, response, doIfAuthenticated) {
   redisClient.sismember(config.REDIS_AUTH_USERS_SET, data.user_id, function(err, userIsAuthenticated) {
@@ -56,6 +58,8 @@ function authenticate(data, response) {
 };
 
 exports.handleOauthCallback = function(request, response) {
+  request.url = url.parse(request.url)
+  request.url.parameters = request.url.query ? parse.httpParameters(request.url.query) : []
   if (request.url.parameters.error) {} else {
     var user_id = request.url.parameters.state.substring(config.STATE_NONCE_LENGTH);
     var state = request.url.parameters.state.substring(0, config.STATE_NONCE_LENGTH);

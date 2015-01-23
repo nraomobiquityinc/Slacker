@@ -11,9 +11,9 @@ var action = {
 
   requiresAuth: true, //signal that this action requires the user to be authenticated
 
-  description: 'Delete all files uploaded to Slack.',
+  description: 'Delete all the files you uploaded to Slack.',
 
-  helpText: 'Delete all files uploaded to Slack.',
+  helpText: 'Delete all the files you uploaded to Slack.',
 
   setup: function() {
     // This method will be run at server start up.
