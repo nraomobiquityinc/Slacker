@@ -40,8 +40,11 @@
     "redis": "0.12.1",
     "slack-node": "0.0.9",
     "superagent": "0.21.0"
+    "slack-node": "0.0.9",
+    "jquerygo": "0.0.16"
   },
   "devDependencies": {
     "mocha": "~1.20.1"
   }
 }
+
