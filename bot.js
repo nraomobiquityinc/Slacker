@@ -20,17 +20,17 @@ exports.setup = function setup(callback) {
   var setup;
   var x;
 
-  fs.readdir(__dirname + '/actions', function (error, files) {
+  fs.readdir(__dirname + '/actions', function(error, files) {
     var errors = [];
     if (error) return callback(error, files);
 
-    _.each(files, function (file) {
+    _.each(files, function(file) {
       require(__dirname + '/actions/' + file);
     });
 
     _.each(exports.actions, function runSetup(action) {
       setup = action.setup;
-      if (setup && _.isFunction(setup)) setup(function (error, data) {
+      if (setup && _.isFunction(setup)) setup(function(error, data) {
         console.log('Running setup of ' + file);
         if (error) {
           errors.push(error);
@@ -48,23 +48,16 @@ exports.setup = function setup(callback) {
 };
 
 exports.processRequest = function processRequest(request, response) {
-  var
-    actionFound,
-    commands,
-    input,
-    outgoingData,
-    pipedResponse,
-    regex,
-    requestText,
-    responseMethod,
-    responseText,
-    VARIABLES;
+  var input;
+  var outgoingData;
+  //削除してもいいか？ どこでも使われていないようだ。
+  //responseMethod,
 
   input = request.body.text;
 
   // The keys on this object will be replaced with their corresponding values
   // at runtime.
-  VARIABLES = {
+  var VARIABLES = {
     'HERE': '#' + request.body.channel_name,
     'ME': '@' + request.body.user_name,
     'TODAY': new Date(Date.now()).toDateString(),
@@ -72,16 +65,15 @@ exports.processRequest = function processRequest(request, response) {
     'DOMAIN': request.body.team_domain
   };
 
-  _.each(VARIABLES, function (value, key) {
-    regex = new RegExp('%24' + key, 'gm');
+  _.each(VARIABLES, function(value, key) {
+    var regex = new RegExp('%24' + key, 'gm');
     input = input.replace(regex, value);
   });
 
-  // Parse commands
-  commands = parse.commands(input);
-  responseMethod = (request.body.trigger_word) ? 'webhook' : 'api';
+  //削除してもいいか？ どこでも使われていないようだ。
+  //responseMethod = (request.body.trigger_word) ? 'webhook' : 'api';
 
-  requestText;
+  var requestText;
   if (request.body.trigger_word)
     requestText = parse.slackText(input.substring(request.body.trigger_word.length + 1, input.length));
   else { // command
@@ -97,92 +89,102 @@ exports.processRequest = function processRequest(request, response) {
     text: requestText,
     timestamp: request.body.timestamp,
     user_id: request.body.user_id,
-    user_name: request.body.user_name
+    user_name: request.body.user_name,
+    request_id: request.id,
+    trigger_word: request.body.trigger_word
   };
 
-  responseText;
-  actionFound;
-  pipedResponse = null;
+  var commands = parse.commands(input);
+  _.each(commands, function(command) {
+    exports.processCommand(command, outgoingData, response);
+  });
+};
 
-  _.each(commands, function (command) {
-    actionFound = _.find(exports.actions, {
-      name: command.name
+exports.processCommand = function(command, data, response, postActionCallback) {
+  var responseText;
+  var pipedResponse = null;
+  var actionFound = _.find(exports.actions, {
+    name: command.name
+  });
+
+  if (!actionFound) {
+    log.error('no bot action found', data.text, data.request_id);
+    responseText = 'Invalid action, try `help`.';
+    response.statusCode = 200;
+    return response.end(formatResponse(responseText));
+  }
+
+  // If the action hasn't completed in time, let the user know.
+  setTimeout(function() {
+    if (!responseText) {
+      log.error('bot action timed out', actionFound.name, data.request_id);
+      response.statusCode = 500;
+      return response.end();
+    }
+  }, config.timeout);
+
+  //疑問-どうしてcloneをしなきゃならないのか？
+  data.command = _.clone(command);
+  data.pipedResponse = _.clone(pipedResponse);
+
+  if (actionFound.requiresAuth) {
+    authenticationHelper.checkUserIsAuthenticated(data, response, function(data) {
+      actionFound.execute(data, actionCallback);
     });
+  } else {
+    actionFound.execute(data, actionCallback);
+  }
 
-    // Actions desn't exist. Inform the user.
-    if (!actionFound) {
-      log.error('no bot action found', requestText, request.id);
-      responseText = 'Invalid action, try `help`.';
-      response.statusCode = 200;
-      return response.end(formatResponse(responseText));
-    }
+  function formatResponse(response) {
+    return (data.trigger_word) ? JSON.stringify({
+      text: response
+    }) : response;
+  }
 
-    // If the action hasn't completed in time, let the user know.
-    setTimeout(function () {
-      if (!responseText) {
-        log.error('bot action timed out', actionFound.name, request.id);
-        response.statusCode = 500;
-        return response.end();
-      }
-    }, config.timeout);
+  function actionCallback(actionResponse) {
+    responseText = actionResponse;
 
-    outgoingData.command = _.clone(command);
-    outgoingData.pipedResponse = _.clone(pipedResponse);
-
-    if (actionFound.requiresAuth) {
-      authenticationHelper.checkUserIsAuthenticated(outgoingData, response, function(data){
-        actionFound.execute(data, actionCallback);
-      });
-    }
-    else{
-      actionFound.execute(outgoingData, actionCallback);
-    }
-
-    function formatResponse(response) {
-        return (request.body.trigger_word) ? JSON.stringify({
-          text: response
-        }) : response;
-    }
-
-    function actionCallback (actionResponse) {
-      responseText = actionResponse;
-
-      // No data back form the action.
-      if (!responseText) {
+    // No data back form the action.
+    if (!responseText) {
+      if (postActionCallback === undefined) {
         response.statusCode = 500;
         response.end();
-        log.error('action did not return a response', actionFound.name, request.id);
-        return;
-      }
-
-      // Success. Now, format the responseText.
-      log.info('bot responding with action', actionFound.name, request.id);
-      if (typeof responseText === 'string') {
-        responseText.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;');
       } else {
-        responseText = JSON.stringify(responseText);
+        postActionCallback("Your action did not return a response");
       }
+      log.error('action did not return a response', actionFound.name, data.request_id);
+      return;
+    }
 
-      // If the command should be piped, save the result.
-      if (command.pipe) {
-        pipedResponse = responseText;
-        return true;
-      } else {
-        pipedResponse = null;
-      }
+    // Success. Now, format the responseText.
+    log.info('bot responding with action', actionFound.name, data.request_id);
+    if (typeof responseText === 'string') {
+      responseText.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;');
+    } else {
+      responseText = JSON.stringify(responseText);
+    }
 
-      // User is ending their command with the `>`. Assume current room.
-      if (command.redirects && !command.redirectTo.length) {
-        command.redirectTo.push({
-          type: 'channel',
-          name: request.body.channel_name
-        });
-      }
+    // If the command should be piped, save the result.
+    if (command.pipe) {
+      pipedResponse = responseText;
+      return true;
+    } else {
+      pipedResponse = null;
+    }
 
-      // If the response should be redirected, then do so
-      if (command.redirectTo.length > 0) {
-        _.each(command.redirectTo, function (redirect) {
-          switch (redirect.type) {
+    // User is ending their command with the `>`. Assume current room.
+    if (command.redirects && !command.redirectTo.length) {
+      command.redirectTo.push({
+        type: 'channel',
+        name: data.channel_name
+      });
+    }
+
+    // redirectの場合postActionCallbackをどう使えるか分からない
+    // If the response should be redirected, then do so
+    if (command.redirectTo.length > 0) {
+      _.each(command.redirectTo, function(redirect) {
+        switch (redirect.type) {
           case 'user':
             exports.sendMessage(responseText, '@' + redirect.name);
             break;
@@ -201,21 +203,25 @@ exports.processRequest = function processRequest(request, response) {
 
           default:
             break;
-          }
-        });
-        return true;
-      }
-
-      response.statusCode = 200;
-      response.end(formatResponse(responseText));
-      log.info('bot successfully responded', {}, request.id);
-
+        }
+      });
       return true;
     }
-  });
-};
 
-exports.addAction = function (action) {
+    if (postActionCallback === undefined) {
+      response.statusCode = 200;
+      response.end(formatResponse(responseText));
+    } else {
+      postActionCallback("Your action finished successfully.\n" +
+        "*Action response*: " + formatResponse(responseText));
+    }
+    log.info('bot successfully responded', {}, data.request_id);
+
+    return true;
+  }
+}
+
+exports.addAction = function(action) {
   if (!action.description || !action.execute) {
     log.error('Invalid bot action', action);
     return false;
@@ -235,8 +241,8 @@ exports.addAction = function (action) {
   return action;
 };
 
-exports.sendMessage = function (message, channel, callback) {
-  callback = callback || function () {};
+exports.sendMessage = function(message, channel, callback) {
+  callback = callback || function() {};
   var messageData = {
     token: config.token.user,
     channel: channel,
@@ -244,12 +250,12 @@ exports.sendMessage = function (message, channel, callback) {
   };
 
   var url = 'https://slack.com/api/chat.postMessage?' + querystring.stringify(messageData);
-  https.get(url, function (response) {
-    response.on('end', function () {
+  https.get(url, function(response) {
+    response.on('end', function() {
       callback(response.error, response);
     });
 
-    response.on('error', function (error) {
+    response.on('error', function(error) {
       console.error(error);
     })
   }).end();

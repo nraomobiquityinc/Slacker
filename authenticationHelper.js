@@ -4,6 +4,8 @@
  */
 'use strict';
 
+var _ = require('lodash');
+var bot = require(__dirname + '/bot.js')
 var config = require(__dirname + '/library/config');
 var log = require(__dirname + '/library/log.js')
 var parse = require(__dirname + '/library/parse.js')
@@ -38,7 +40,7 @@ exports.checkUserIsAuthenticated = function(data, response, doIfAuthenticated) {
 function authenticate(data, response) {
   redisClient.hget(data.user_id, "queuedActions", function(err, pastQueuedActionsList) {
     if (err) {
-      sendMessage("Something wasn't right with redis. :disappointed:", data.channel_name);
+      log.info("Something wasn't right with redis.");
       console.error("Unable to get queuedActions from redis for user " + data.user_id);
       throw err;
     } else {
@@ -60,7 +62,7 @@ function authenticate(data, response) {
 
         redisClient.hmset(data.user_id, userState, function(err, res) {
           if (err) {
-            sendMessage("Something wasn't right with redis. :disappointed:", data.channel_name);
+            log.info("Something wasn't right with redis.");
             console.error("Unable to save state to redis for user " + data.user_id);
             throw err;
           } else {
@@ -78,14 +80,14 @@ function authenticate(data, response) {
         pastQueuedActionsList.push(actionData);
         redisClient.hset(data.user_id, "queuedActions", JSON.stringify(pastQueuedActionsList), function(err, res) {
           if (err) {
-            sendMessage("Something wasn't right with redis. :disappointed:", data.channel_name);
+            log.info("Something wasn't right with redis.");
             console.error("Unable to update queuedActions in redis for user " + data.user_id);
             throw err;
           } else {
             log.info("Updated user " + data.user_id + "'s queuedActions in redis");
             redisClient.hget(data.user_id, "state", function(err, oldState) {
               if (err) {
-                sendMessage("Something wasn't right with redis. :disappointed:", data.channel_name);
+                log.info("Something wasn't right with redis.");
                 console.error("Unable to retrieve old state from redis for user " + data.user_id);
                 throw err;
               } else {
@@ -200,10 +202,40 @@ function displayAuthSuccessPage(accessToken, userId, response) {
     });
 }
 
-function createOauthAccessPath(code) {
-  return "/api/oauth.access?" + "client_id=" + config.authClientId + "&" +
-    "client_secret=" + config.authClientSecret + "&" +
-    "code=" + code;
+/*
+ * This function is only used right after authentication for the queued actions
+ * that the user has chosen to run.
+ */
+exports.performAuthenticatedActions = function(userId, selectedActionIndices, response) {
+  //fetch token and queuedActions
+  var indices = []
+  for (var idx in selectedActionIndices) indices.push(idx.split('-')[0]);
+  redisClient.hget(userId, "queuedActions", function(err, actionsData) {
+    if (err) {
+      log.info("Something wasn't right with redis.");
+      console.error("Unable to get queuedActions for userId " + userId + " from redis");
+      throw err;
+    } else {
+      actionsData = JSON.parse(actionsData);
+      redisClient.hdel(userId, "queuedActions", function(err, res) {
+        if (err) {
+          log.info("Something wasn't right with redis.");
+          console.error("Unable to delete queuedActions for userId " + userId + " from redis");
+          throw err;
+        } else {
+          _.forEach(indices, function(idx) {
+            var action = actionsData[idx];
+            var command = _.clone(action.data.command); //これは必要かないかまだはっきり分からない
+            var data = action.data;
+            bot.processCommand(command, data, response, function(message) {
+              bot.sendMessage(message + "\n*Action command*: `" + command.name + "`" +
+                "\n*Action initially requested at*: " + action.timeStamp, userId);
+            });
+          })
+        }
+      })
+    }
+  })
 }
 
 function createStateNonce() {
