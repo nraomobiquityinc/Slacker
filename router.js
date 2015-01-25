@@ -37,6 +37,14 @@ router.get('/oauthcallback', function(request, response) {
   authenticationHelper.handleOauthCallback(request, response);
 });
 
+router.post('/runactions/:userId', function(req, res) {
+  var userId = req.params.userId;
+  var selectedActionIndices = req.body;
+  console.log(userId);
+  console.log(selectedActionIndices);
+  return res.render('actionsDone');
+});
+
 function connectRequestDomainMiddleware(request, response, nextRequestHandler) {
   requestDomain = domain.create()
 
