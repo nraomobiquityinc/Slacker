@@ -13,7 +13,7 @@ var action = {
 
   description: 'Delete all the files you uploaded to Slack.',
 
-  helpText: 'Delete all the files you uploaded to Slack.',
+  helpText: 'Delete all the files you uploaded to Slack. Caution: deleting files is permanent!',
 
   setup: function() {
     // This method will be run at server start up.
