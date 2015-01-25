@@ -29,6 +29,11 @@
       "name": "Andrew Crites",
       "github": "https://github.com/ajcrites",
       "email": "acrites@mobiquityinc.com"
+    },
+    {
+      "name": "Raj",
+      "github": "https://github.com/nraomobiquityinc",
+      "email": "nrao@mobiquityinc.com"
     }
   ],
   "license": "ISC",
