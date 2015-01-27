@@ -5,10 +5,7 @@ var config = require(__dirname + '/../library/config');
 var request = require('superagent');
 var redis = require('redis');
 var redisClient = redis.createClient();
-var slackApi = require('slack-api');
-
-var Promise = require('bluebird');
-var files = Promise.promisifyAll(require('slack-api').files);
+var slackApi = require('slack-api').promisify();
 
 var action = {
   name: 'rm',
@@ -29,7 +26,7 @@ var action = {
 }
 
 function deleteFiles(accessToken, callback) {
-  files.listAsync({
+  slackApi.files.list({
     token: accessToken
   }).then(function(response) {
     if (response.ok) {
@@ -48,7 +45,7 @@ function deleteFiles(accessToken, callback) {
 }
 
 function deleteFile(accessToken, file, recurse) {
-  files.deleteAsync({
+  slackApi.files.delete({
     t: Math.floor((new Date()).getTime() / 1000),
     token: accessToken,
     file: file.id
