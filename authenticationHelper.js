@@ -67,10 +67,8 @@ function authenticate(data, response) {
             throw err;
           } else {
             log.info("Added user " + data.user_id + " to redis");
-            response.statusCode = 200;
-            response.end("You need to authorize slackbot to do that for you: <" + createAuthorizeURL(state + data.user_id) + ">" +
-              "\nYou only need to do this once. Your command will be run once you've authorized us");
-            return true;
+            //TODO: add a state -> user_id mapping instead of concatenating them
+            return createAuthorizeResponse(response, state + data.user_id);
           }
         });
       } else {
@@ -91,10 +89,7 @@ function authenticate(data, response) {
                 console.error("Unable to retrieve old state from redis for user " + data.user_id);
                 throw err;
               } else {
-                response.statusCode = 200;
-                response.end("You need to authorize slackbot to do that for you: <" + createAuthorizeURL(oldState + data.user_id) + ">" +
-                  "\nYou only need to do this once. Your command will be run once you've authorized us");
-                return true;
+                return createAuthorizeResponse(response, state);
               }
             });
           }
@@ -103,6 +98,13 @@ function authenticate(data, response) {
     }
   })
 };
+
+function createAuthorizeResponse(response, state) {
+  response.statusCode = 200;
+  response.end("You need to authorize slackbot to do that for you: <" + createAuthorizeURL(state) + ">" +
+    "\nYou only need to do this once. Your command will be run once you've authorized us");
+  return true;
+}
 
 exports.handleOauthCallback = function(request, response) {
   request.url = url.parse(request.url)
@@ -147,6 +149,9 @@ function checkStateIsValid(receivedState, userId, code, response) {
   });
 }
 
+//TODO: add a slack command to revoke user's auth token
+//      this will clear any queued actions
+//      and remove user from authenticated set
 function saveAccessToken(accessToken, userId, response) {
   redisClient.hset(userId, "accessToken", accessToken, function(err, res) {
     if (err) {
@@ -189,6 +194,7 @@ function displayAuthSuccessPage(accessToken, userId, response) {
                 console.error("Unable to get queuedActions for userId " + userId + " from redis");
                 throw err;
               } else {
+                //TODO: add partials. check out lodash templates
                 response.render('authSuccess', {
                   userId: userId,
                   userName: userName,
@@ -231,11 +237,11 @@ exports.performAuthenticatedActions = function(userId, selectedActionIndices, re
               bot.sendMessage(message + "\n*Action command*: `" + command.name + "`" +
                 "\n*Action initially requested at*: " + action.timeStamp, userId);
             });
-          })
+          });
         }
-      })
+      });
     }
-  })
+  });
 }
 
 function createStateNonce() {

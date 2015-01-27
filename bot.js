@@ -50,8 +50,6 @@ exports.setup = function setup(callback) {
 exports.processRequest = function processRequest(request, response) {
   var input;
   var outgoingData;
-  //削除してもいいか？ どこでも使われていないようだ。
-  //responseMethod,
 
   input = request.body.text;
 
@@ -70,15 +68,7 @@ exports.processRequest = function processRequest(request, response) {
     input = input.replace(regex, value);
   });
 
-  //削除してもいいか？ どこでも使われていないようだ。
-  //responseMethod = (request.body.trigger_word) ? 'webhook' : 'api';
-
-  var requestText;
-  if (request.body.trigger_word)
-    requestText = parse.slackText(input.substring(request.body.trigger_word.length + 1, input.length));
-  else { // command
-    requestText = decodeURIComponent(input.replace(/\+/g, '%20'));
-  }
+  var requestText = decodeURIComponent(input.replace(/\+/g, '%20'));
   log.info('bot processing request', request.body, request.id);
 
   outgoingData = {
@@ -90,8 +80,7 @@ exports.processRequest = function processRequest(request, response) {
     timestamp: request.body.timestamp,
     user_id: request.body.user_id,
     user_name: request.body.user_name,
-    request_id: request.id,
-    trigger_word: request.body.trigger_word
+    request_id: request.id
   };
 
   var commands = parse.commands(input);
@@ -111,7 +100,7 @@ exports.processCommand = function(command, data, response, postActionCallback) {
     log.error('no bot action found', data.text, data.request_id);
     responseText = 'Invalid action, try `help`.';
     response.statusCode = 200;
-    return response.end(formatResponse(responseText));
+    return response.end(responseText);
   }
 
   // If the action hasn't completed in time, let the user know.
@@ -123,7 +112,6 @@ exports.processCommand = function(command, data, response, postActionCallback) {
     }
   }, config.timeout);
 
-  //疑問-どうしてcloneをしなきゃならないのか？
   data.command = _.clone(command);
   data.pipedResponse = _.clone(pipedResponse);
 
@@ -133,12 +121,6 @@ exports.processCommand = function(command, data, response, postActionCallback) {
     });
   } else {
     actionFound.execute(data, actionCallback);
-  }
-
-  function formatResponse(response) {
-    return (data.trigger_word) ? JSON.stringify({
-      text: response
-    }) : response;
   }
 
   function actionCallback(actionResponse) {
@@ -210,10 +192,10 @@ exports.processCommand = function(command, data, response, postActionCallback) {
 
     if (postActionCallback === undefined) {
       response.statusCode = 200;
-      response.end(formatResponse(responseText));
+      response.end(responseText);
     } else {
       postActionCallback("Your action finished successfully.\n" +
-        "*Action response*: " + formatResponse(responseText));
+        "*Action response*: " + responseText);
     }
     log.info('bot successfully responded', {}, data.request_id);
 
