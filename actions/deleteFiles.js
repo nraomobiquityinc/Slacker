@@ -26,38 +26,32 @@ var action = {
 }
 
 function deleteFiles(accessToken, callback) {
-  request
-    .get("https://slack.com/api/files.list?token=" + accessToken)
-    .end(function(err, response) {
-      if (response.ok) {
-        var responseJSON = response.body;
-        if (responseJSON.files && responseJSON.files.length > 0) {
-          var recurse = _.after(responseJSON.files.length, function() {
-            deleteFiles(accessToken, callback);
-          });
-          _.forEach(responseJSON.files, function(file) {
-            deleteFile(accessToken, file, recurse);
-          })
-        } else {
-          callback("No more files to delete.");
-        }
+  slackApi.files.list({
+    token: accessToken
+  }, function(err, response) {
+    if (response.ok) {
+      if (response.files && response.files.length > 0) {
+        var recurse = _.after(response.files.length, function() {
+          deleteFiles(accessToken, callback);
+        });
+        _.forEach(response.files, function(file) {
+          deleteFile(accessToken, file, recurse);
+        })
+      } else {
+        callback("No more files to delete.");
       }
-    });
+    }
+  });
 }
 
 function deleteFile(accessToken, file, recurse) {
-  request
-    .post("https://slack.com/api/files.delete?t=" + Math.floor((new Date()).getTime() / 1000))
-    .type("form")
-    .send({
-      token: accessToken,
-      file: file.id,
-      set_active: "true",
-      _attempts: "1"
-    })
-    .end(function(err, response) {
-      if (response.body.ok === true) recurse();
-    });
+  slackApi.files.delete({
+    t: Math.floor((new Date()).getTime() / 1000),
+    token: accessToken,
+    file: file.id
+  }, function(err, response) {
+    if (response.ok === true) recurse();
+  });
 }
 
 // Adds this action to the action list.
