@@ -203,6 +203,9 @@ function displayAuthSuccessPage(accessToken, userId, response) {
               }
             });
           }
+        } else {
+          //TODO: add handlebar template for this error
+          return response.end("Slack failed to respond with error code: " + res.statusCode);
         }
       }
     });
@@ -231,11 +234,22 @@ exports.performAuthenticatedActions = function(userId, selectedActionIndices, re
         } else {
           _.forEach(indices, function(idx) {
             var action = actionsData[idx];
-            var command = _.clone(action.data.command); //これは必要かないかまだはっきり分からない
+            var command = _.clone(action.data.command);
             var data = action.data;
             bot.processCommand(command, data, response, function(message) {
               bot.sendMessage(message + "\n*Action command*: `" + command.name + "`" +
-                "\n*Action initially requested at*: " + action.timeStamp, userId);
+                "\n*Action initially requested at*: " + action.timeStamp, userId,
+                function(err, res) {
+                  if (err) {
+                    console.error("Unable to message userId " + userId + ", error: " + err);
+                  } else {
+                    if (res.body.ok) {
+                      log.info("Sent userId " + userId + " message " + message);
+                    } else {
+                      log.error("Unable to mesage userId " + userId + ", error: " + JSON.stringify(res.body));
+                    }
+                  }
+                });
             });
           });
         }

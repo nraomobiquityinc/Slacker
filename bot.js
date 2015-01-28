@@ -3,8 +3,8 @@
 // NPM modules
 var _ = require('lodash');
 var fs = require('fs');
-var https = require('https');
 var querystring = require('querystring');
+var request = require('superagent');
 
 // Libraries
 var config = require(__dirname + '/library/config');
@@ -162,7 +162,6 @@ exports.processCommand = function(command, data, response, postActionCallback) {
       });
     }
 
-    // redirectの場合postActionCallbackをどう使えるか分からない
     // If the response should be redirected, then do so
     if (command.redirectTo.length > 0) {
       _.each(command.redirectTo, function(redirect) {
@@ -223,6 +222,8 @@ exports.addAction = function(action) {
   return action;
 };
 
+//TODO: this should be an authorized action. We must fetch the user's actual token
+//or ask him to authorize, if it doesn't exist
 exports.sendMessage = function(message, channel, callback) {
   callback = callback || function() {};
   var messageData = {
@@ -232,13 +233,7 @@ exports.sendMessage = function(message, channel, callback) {
   };
 
   var url = 'https://slack.com/api/chat.postMessage?' + querystring.stringify(messageData);
-  https.get(url, function(response) {
-    response.on('end', function() {
-      callback(response.error, response);
-    });
-
-    response.on('error', function(error) {
-      console.error(error);
-    })
-  }).end();
+  request
+    .get(url)
+    .end(callback);
 };
