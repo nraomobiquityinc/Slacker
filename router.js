@@ -10,26 +10,23 @@ var parse = require(__dirname + '/library/parse.js')
 var router = module.exports = express.Router();
 var url = require('url')
 
-var requestDomain;
+router.route('*')
+  .all(function(request, response, next) {
+    connectDomainMiddleware(request, response, next);
+  });
 
 router.route('/')
-  .all(function(request, response, next) {
-    connectRequestDomainMiddleware(request, response, next);
-  })
   .get(function(request, response) {
+    //TODO: add handlebar template for this error
     response.end('Slacker is running.');
   })
   .post(function(request, response) {
-    try {
-      if (request.body.command && request.body.token === config.token.slashCommand) {
-        bot.processRequest(request, response);
-      } else {
-        log.error('invalid token', request.body.token, request.id)
-        response.statusCode = 403
-        response.end()
-      }
-    } catch (err) {
-      requestDomain.emit("error", err);
+    if (request.body.command && request.body.token === config.token.slashCommand) {
+      bot.processRequest(request, response);
+    } else {
+      log.error('invalid token', request.body.token, request.id)
+      response.statusCode = 403
+      response.end()
     }
   });
 
@@ -37,31 +34,31 @@ router.get('/oauthcallback', function(request, response) {
   authenticationHelper.handleOauthCallback(request, response);
 });
 
-router.post('/runactions/:userId', function(request, response) {
+router.post('/:userId/runactions', function(request, response) {
   var userId = request.params.userId;
   var selectedActionIndices = request.body;
   authenticationHelper.performAuthenticatedActions(userId, selectedActionIndices, response);
   return response.render('actionsDone');
 });
 
-function connectRequestDomainMiddleware(request, response, nextRequestHandler) {
-  requestDomain = domain.create()
+function connectDomainMiddleware(request, response, nextRequestHandler) {
+  var requestDomain = domain.create();
 
-  requestDomain.add(request)
-  requestDomain.add(response)
+  requestDomain.add(request);
+  requestDomain.add(response);
 
-  request.url = url.parse(request.url)
-  request.url.parameters = request.url.query ? parse.httpParameters(request.url.query) : []
-  request.id = id()
+  request.url = url.parse(request.url);
+  request.url.parameters = request.url.query ? parse.httpParameters(request.url.query) : [];
+  request.id = id();
 
   log.info('request', {
     method: request.method,
     pathname: request.url.pathname,
     parameters: request.url.parameters,
     ip: request.connection.remoteAddress
-  }, request.id)
+  }, request.id);
 
-  log.info('headers', request.headers, request.id)
+  log.info('headers', request.headers, request.id);
 
   requestDomain.on('error', function(error) {
     log.error('uncaught exception', error, response.id)
@@ -79,7 +76,9 @@ function connectRequestDomainMiddleware(request, response, nextRequestHandler) {
       log.error('failed to respond after uncaught exception', exception, response.id)
       console.error(exception.stack);
     }
-  })
+  });
 
-  nextRequestHandler();
+  requestDomain.run(function() {
+    nextRequestHandler();
+  });
 }
