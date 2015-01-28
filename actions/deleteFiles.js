@@ -4,7 +4,7 @@ var _ = require('lodash');
 var slackApi = require('slack-api').promisify();
 
 var action = {
-  name: 'rm',
+  name: 'deleteFiles',
 
   requiresAuth: true, //signal that this action requires the user to authenticate Slacker first
 
