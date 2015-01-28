@@ -89,7 +89,7 @@ function authenticate(data, response) {
                 console.error("Unable to retrieve old state from redis for user " + data.user_id);
                 throw err;
               } else {
-                return createAuthorizeResponse(response, state);
+                return createAuthorizeResponse(response, oldState + data.user_id);
               }
             });
           }
@@ -184,29 +184,29 @@ function displayAuthSuccessPage(accessToken, userId, response) {
         log.info("Unable to fetch user name from Slack for user with id " + userId);
         throw err;
       } else {
+        var userName;
         if (res.ok) {
           var responseJSON = res.body;
           if (responseJSON && responseJSON.ok === true) {
-            var userName = responseJSON.user.name;
-            redisClient.hget(userId, "queuedActions", function(err, actions) {
-              if (err) {
-                log.info("Something wasn't right with redis.");
-                console.error("Unable to get queuedActions for userId " + userId + " from redis");
-                throw err;
-              } else {
-                //TODO: add partials. check out lodash templates
-                response.render('authSuccess', {
-                  userId: userId,
-                  userName: userName,
-                  actionsList: JSON.parse(actions)
-                });
-              }
+            userName = responseJSON.user.name;
+          }
+        }
+        userName = userName || actions[actions.length - 1].data.user_name;
+        redisClient.hget(userId, "queuedActions", function(err, actions) {
+          if (err) {
+            log.info("Something wasn't right with redis.");
+            console.error("Unable to get queuedActions for userId " + userId + " from redis");
+            throw err;
+          } else {
+            //TODO: add partials. check out lodash templates
+            var actions = JSON.parse(actions);
+            response.render('authSuccess', {
+              userId: userId,
+              userName: userName,
+              actionsList: actions
             });
           }
-        } else {
-          //TODO: add handlebar template for this error
-          return response.end("Slack failed to respond with error code: " + res.statusCode);
-        }
+        });
       }
     });
 }
