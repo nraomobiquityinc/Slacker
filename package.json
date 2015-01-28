@@ -41,7 +41,7 @@
     "jquerygo": "0.0.16",
     "lodash": "~2.4.1",
     "redis": "0.12.1",
-    "slack-api": "^0.1.10",
+    "slack-api": "^0.1.11",
     "slack-node": "0.0.9",
     "superagent": "0.21.0"
   },

@@ -89,12 +89,14 @@ exports.processRequest = function processRequest(request, response) {
   });
 };
 
-exports.processCommand = function(command, data, response, postActionCallback) {
+exports.processCommand = function(command, data, response, authHelperCallback) {
   var responseText;
   var pipedResponse = null;
   var actionFound = _.find(exports.actions, {
     name: command.name
   });
+
+  var isFromAuthHelper = _.isFunction(authHelperCallback);
 
   if (!actionFound) {
     log.error('no bot action found', data.text, data.request_id);
@@ -128,11 +130,11 @@ exports.processCommand = function(command, data, response, postActionCallback) {
 
     // No data back form the action.
     if (!responseText) {
-      if (postActionCallback === undefined) {
+      if (isFromAuthHelper) {
+        authHelperCallback("Your action did not return a response");
+      } else {
         response.statusCode = 500;
         response.end();
-      } else {
-        postActionCallback("Your action did not return a response");
       }
       log.error('action did not return a response', actionFound.name, data.request_id);
       return;
@@ -189,12 +191,12 @@ exports.processCommand = function(command, data, response, postActionCallback) {
       return true;
     }
 
-    if (postActionCallback === undefined) {
+    if (isFromAuthHelper) {
+      authHelperCallback("Your action finished successfully.\n" +
+        "*Action response*: " + responseText);
+    } else {
       response.statusCode = 200;
       response.end(responseText);
-    } else {
-      postActionCallback("Your action finished successfully.\n" +
-        "*Action response*: " + responseText);
     }
     log.info('bot successfully responded', {}, data.request_id);
 
