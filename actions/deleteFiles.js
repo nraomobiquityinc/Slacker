@@ -1,10 +1,6 @@
 // Loads all of the bot functionality.
 var bot = require(__dirname + '/../bot.js');
 var _ = require('lodash');
-var config = require(__dirname + '/../library/config');
-var request = require('superagent');
-var redis = require('redis');
-var redisClient = redis.createClient();
 var slackApi = require('slack-api').promisify();
 
 var action = {
@@ -41,6 +37,8 @@ function deleteFiles(accessToken, callback) {
         callback("No more files to delete.");
       }
     }
+  }).catch(function(error) {
+    throw error;
   });
 }
 
@@ -51,6 +49,8 @@ function deleteFile(accessToken, file, recurse) {
     file: file.id
   }).then(function(response) {
     if (response.ok === true) recurse();
+  }).catch(function(error) {
+    throw error;
   });
 }
 
