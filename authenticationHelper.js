@@ -116,7 +116,11 @@ function createAuthorizeResponse(state, response) {
 exports.handleOauthCallback = function(request, response) {
   request.url = url.parse(request.url)
   request.url.parameters = request.url.query ? parse.httpParameters(request.url.query) : []
-  if (request.url.parameters.error) {} else {
+  if (request.url.parameters.error) {
+    response.render('error', {
+      message: "Sorry, we cannot run commands without your authorization."
+    });
+  } else {
     var state = request.url.parameters.state;
     var code = request.url.parameters.code;
     checkStateIsValid(state, code, response);
@@ -135,8 +139,9 @@ function checkStateIsValid(receivedState, code, response) {
       invalidateProcessedState(receivedState, code, response);
     } else {
       response.statusCode = 400;
-      //TODO: add handlebar template for this error
-      return response.end("State " + receivedState + " was invalid");
+      response.render('error', {
+        message: "State " + receivedState + " was invalid"
+      });
     }
   });
 }
@@ -166,8 +171,9 @@ function getNewAccessToken(code, response) {
         return saveAccessToken(res.body.access_token, response);
       } else {
         response.statusCode = 400;
-        //TODO: add handlebar template for this error
-        return response.end("Something went wrong with authentication.");
+        return response.render('error', {
+          message: "Something went wrong with authentication."
+        });
       }
     });
 }
@@ -212,7 +218,6 @@ function displayAuthSuccessPage(accessToken, userId, response) {
               console.error("Unable to get queuedActions for userId " + userId + " from redis");
               throw err;
             } else {
-              //TODO: add partials. check out lodash templates
               var actions = JSON.parse(actions);
               response.render('authSuccess', {
                 userId: userId,
@@ -232,8 +237,7 @@ function displayAuthSuccessPage(accessToken, userId, response) {
  */
 exports.performAuthenticatedActions = function(userId, selectedActionIndices, response) {
   //fetch token and queuedActions
-  var indices = []
-  for (var idx in selectedActionIndices) indices.push(idx.split('-')[0]);
+  var indices = selectedActionIndices;
   redisClient.hget(userId, "queuedActions", function(err, actionsData) {
     if (err) {
       log.info("Something wasn't right with redis.");
@@ -242,8 +246,9 @@ exports.performAuthenticatedActions = function(userId, selectedActionIndices, re
     } else {
       if (actionsData === null) {
         response.statusCode = 400;
-        //TODO: add handlebar template for this error
-        return response.end("Your actions have already been processed.");
+        return response.render('error', {
+          message: "Your actions have already been processed."
+        });
       }
 
       actionsData = JSON.parse(actionsData);
