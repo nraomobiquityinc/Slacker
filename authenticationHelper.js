@@ -15,23 +15,16 @@ var url = require('url');
 var request = require('superagent');
 
 exports.checkUserIsAuthenticated = function(data, response, doIfAuthenticated) {
-  redisClient.sismember(config.REDIS_AUTH_USERS_SET, data.user_id, function(err, userIsAuthenticated) {
+  redisClient.hget(data.user_id, "accessToken", function(err, accessToken) {
     if (err) {
       log.error(err);
       throw err;
     } else {
-      if (userIsAuthenticated) {
-        redisClient.hget(data.user_id, "accessToken", function(err, accessToken) {
-          if (err) {
-            log.error(err);
-            throw err;
-          } else {
-            data.accessToken = accessToken;
-            return doIfAuthenticated(data);
-          }
-        });
-      } else {
+      if (accessToken === null) { //user is not authenticated
         return authenticate(data, response);
+      } else {
+        data.accessToken = accessToken;
+        return doIfAuthenticated(data);
       }
     }
   });
@@ -67,8 +60,7 @@ function authenticate(data, response) {
             throw err;
           } else {
             log.info("Added user " + data.user_id + " to redis");
-            //TODO: add a state -> user_id mapping instead of concatenating them
-            return createAuthorizeResponse(response, state + data.user_id);
+            saveState(state, response);
           }
         });
       } else {
@@ -89,7 +81,7 @@ function authenticate(data, response) {
                 console.error("Unable to retrieve old state from redis for user " + data.user_id);
                 throw err;
               } else {
-                return createAuthorizeResponse(response, oldState + data.user_id);
+                return createAuthorizeResponse(oldState, response);
               }
             });
           }
@@ -99,7 +91,22 @@ function authenticate(data, response) {
   })
 };
 
-function createAuthorizeResponse(response, state) {
+function saveState(state, response) {
+  redisClient.sadd(config.REDIS_VALID_AUTHS, state, function(err, stateAdded) {
+    if (err) {
+      log.info("Something wasn't right with redis.");
+      console.error("Unable to save state " + state);
+      throw err;
+    } else {
+      if (stateAdded) {
+        log.info("Added state " + state + " to redis");
+        return createAuthorizeResponse(state, response);
+      }
+    }
+  });
+}
+
+function createAuthorizeResponse(state, response) {
   response.statusCode = 200;
   response.end("You need to authorize slackbot to do that for you: <" + createAuthorizeURL(state) + ">" +
     "\nYou only need to do this once. Your command will be run once you've authorized us");
@@ -110,103 +117,111 @@ exports.handleOauthCallback = function(request, response) {
   request.url = url.parse(request.url)
   request.url.parameters = request.url.query ? parse.httpParameters(request.url.query) : []
   if (request.url.parameters.error) {} else {
-    var userId = request.url.parameters.state.substring(config.STATE_NONCE_LENGTH);
-    var state = request.url.parameters.state.substring(0, config.STATE_NONCE_LENGTH);
+    var state = request.url.parameters.state;
     var code = request.url.parameters.code;
-    checkStateIsValid(state, userId, code, response);
+    checkStateIsValid(state, code, response);
   }
 }
 
-function checkStateIsValid(receivedState, userId, code, response) {
-  redisClient.hget(userId, "state", function(err, sentState) {
+function checkStateIsValid(receivedState, code, response) {
+  redisClient.sismember(config.REDIS_VALID_AUTHS, receivedState, function(err, stateFound) {
     if (err) {
       log.info("Something wasn't right with redis.");
-      console.error("Unable to get state from redis for user " + userId);
+      console.error("Unable to check set membership for state " + receivedState);
       throw err;
     }
 
-    if (receivedState === sentState) {
-      request
-        .get("https://slack.com/api/oauth.access?" + "client_id=" + config.authClientId +
-          "&client_secret=" + config.authClientSecret + "&code=" + code)
-        .end(function(err, res) {
-          if (res.ok) {
-            var responseJSON = res.body;
-            if (responseJSON && responseJSON.ok === true) {
-              return saveAccessToken(responseJSON.access_token, userId, response);
-            } else {
-              response.statusCode = 400;
-              //TODO: add handlebar template for this error
-              return response.end("Something went wrong with authentication.");
-            }
-          }
-        });
+    if (stateFound) {
+      invalidateProcessedState(receivedState, code, response);
     } else {
       response.statusCode = 400;
       //TODO: add handlebar template for this error
-      return response.end("State was invalid; expected: " + sentState + ", received: " + receivedState);
+      return response.end("State " + receivedState + " was invalid");
     }
   });
+}
+
+function invalidateProcessedState(processedState, code, response) {
+  redisClient.srem(config.REDIS_VALID_AUTHS, processedState, function(err, stateDeleted) {
+    if (err) {
+      log.info("Something wasn't right with redis.");
+      console.error("Unable to check set membership for state " + processedState);
+      throw err;
+    }
+
+    if (stateDeleted) {
+      getNewAccessToken(code, response);
+    } else {
+      log.error('Unable to delete state ' + processedState + ' from redis');
+    }
+  })
+}
+
+function getNewAccessToken(code, response) {
+  request
+    .get("https://slack.com/api/oauth.access?" + "client_id=" + config.authClientId +
+      "&client_secret=" + config.authClientSecret + "&code=" + code)
+    .end(function(err, res) {
+      if (res.ok && res.body && (res.body.ok === true)) {
+        return saveAccessToken(res.body.access_token, response);
+      } else {
+        response.statusCode = 400;
+        //TODO: add handlebar template for this error
+        return response.end("Something went wrong with authentication.");
+      }
+    });
 }
 
 //TODO: add a slack command to revoke user's auth token
 //      this will clear any queued actions
-//      and remove user from authenticated set
-function saveAccessToken(accessToken, userId, response) {
-  redisClient.hset(userId, "accessToken", accessToken, function(err, res) {
-    if (err) {
-      log.info("Something wasn't right with redis.");
-      console.error("Unable to save accessToken for userId " + userId + " to redis");
-      throw err;
-    }
-    log.info("Updated user " + userId + "'s access token to " + accessToken);
-    recordThatUserIsAuthorized(accessToken, userId, response);
-  });
-}
-
-function recordThatUserIsAuthorized(accessToken, userId, response) {
-  redisClient.sadd(config.REDIS_AUTH_USERS_SET, userId, function(err, res) {
-    if (err) {
-      log.info("Something wasn't right with redis.");
-      console.error("Unable to add userId " + userId + " to authenticated users set in redis");
-      throw err;
-    }
-    log.info("User " + userId + " is now authorized.");
-    displayAuthSuccessPage(accessToken, userId, response);
-  });
+//      and clear user's saved accessToken
+function saveAccessToken(accessToken, response) {
+  request
+    .get("https://slack.com/api/auth.test?" + "token=" + accessToken)
+    .end(function(err, res) {
+      if (res.ok) {
+        var userId = res.body.user_id;
+        redisClient.hset(userId, "accessToken", accessToken, function(err, res) {
+          if (err) {
+            log.info("Something wasn't right with redis.");
+            console.error("Unable to save accessToken for userId " + userId + " to redis");
+            throw err;
+          }
+          log.info("Updated user " + userId + "'s access token to " + accessToken);
+          displayAuthSuccessPage(accessToken, userId, response);
+        });
+      } else {
+        log.info("Could not query oauth.test for token: " + accessToken);
+      }
+    });
 }
 
 function displayAuthSuccessPage(accessToken, userId, response) {
   request
-    .get("https://slack.com/api/users.info?token=" + accessToken + "&user=" + userId)
+    .get("https://slack.com/api/auth.test?token=" + accessToken)
     .end(function(err, res) {
       if (err) {
         log.info("Unable to fetch user name from Slack for user with id " + userId);
         throw err;
       } else {
-        var userName;
-        if (res.ok) {
-          var responseJSON = res.body;
-          if (responseJSON && responseJSON.ok === true) {
-            userName = responseJSON.user.name;
-          }
+        if (res.ok && res.body && (res.body.ok === true)) {
+          var userName = res.body.user;
+          redisClient.hget(userId, "queuedActions", function(err, actions) {
+            if (err) {
+              log.info("Something wasn't right with redis.");
+              console.error("Unable to get queuedActions for userId " + userId + " from redis");
+              throw err;
+            } else {
+              //TODO: add partials. check out lodash templates
+              var actions = JSON.parse(actions);
+              response.render('authSuccess', {
+                userId: userId,
+                userName: userName,
+                actionsList: actions
+              });
+            }
+          });
         }
-        userName = userName || actions[actions.length - 1].data.user_name;
-        redisClient.hget(userId, "queuedActions", function(err, actions) {
-          if (err) {
-            log.info("Something wasn't right with redis.");
-            console.error("Unable to get queuedActions for userId " + userId + " from redis");
-            throw err;
-          } else {
-            //TODO: add partials. check out lodash templates
-            var actions = JSON.parse(actions);
-            response.render('authSuccess', {
-              userId: userId,
-              userName: userName,
-              actionsList: actions
-            });
-          }
-        });
       }
     });
 }
@@ -225,6 +240,12 @@ exports.performAuthenticatedActions = function(userId, selectedActionIndices, re
       console.error("Unable to get queuedActions for userId " + userId + " from redis");
       throw err;
     } else {
+      if (actionsData === null) {
+        response.statusCode = 400;
+        //TODO: add handlebar template for this error
+        return response.end("Your actions have already been processed.");
+      }
+
       actionsData = JSON.parse(actionsData);
       redisClient.hdel(userId, "queuedActions", function(err, res) {
         if (err) {
