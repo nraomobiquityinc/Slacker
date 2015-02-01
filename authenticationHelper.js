@@ -39,7 +39,7 @@ function authenticate(data, response) {
       var action = new models.Action(actionData);
       dao.save(action, function(res) {
         log.info("Updated user " + data.user_id + "'s queuedActions in Mongo");
-        dao.getStateForUser(data.user_id, function(oldState){
+        dao.getStateForUser(data.user_id, function(oldState) {
           return createAuthorizeResponse(oldState, response);
         })
       });
@@ -56,7 +56,7 @@ function authenticate(data, response) {
 
       var action = new models.Action(actionData);
 
-      dao.saveUserAndAction(user, action, function(res){
+      dao.saveUserAndAction(user, action, function(res) {
         createAuthorizeResponse(state, response);
       });
     }
@@ -157,27 +157,27 @@ exports.performAuthenticatedActions = function(userId, selectedActionIndices, re
   var indices = selectedActionIndices;
   dao.getQueuedActionsForUser(userId, function(actions) {
     if (actions.length) {
-        dao.deleteActions(userId, function(res){});
-        _.forEach(indices, function(idx) {
-            var action = actions[idx];
-            var command = _.clone(action.data.command);
-            var data = action.data;
-            bot.processCommand(command, data, response, function(message) {
-              bot.sendMessage(message + "\n*Action command*: `" + command.name + "`" +
-                "\n*Action initially requested at*: " + action.timeStamp, userId,
-                function(err, res) {
-                  if (err) {
-                    console.error("Unable to message userId " + userId + ", error: " + err);
-                  } else {
-                    if (res.body.ok) {
-                      log.info("Sent userId " + userId + " message " + message);
-                    } else {
-                      log.error("Unable to mesage userId " + userId + ", error: " + JSON.stringify(res.body));
-                    }
-                  }
-                });
+      dao.deleteActions(userId, function(res) {});
+      _.forEach(indices, function(idx) {
+        var action = actions[idx];
+        var command = _.clone(action.data.command);
+        var data = action.data;
+        bot.processCommand(command, data, response, function(message) {
+          bot.sendMessage(message + "\n*Action command*: `" + command.name + "`" +
+            "\n*Action initially requested at*: " + action.timeStamp, userId,
+            function(err, res) {
+              if (err) {
+                console.error("Unable to message userId " + userId + ", error: " + err);
+              } else {
+                if (res.body.ok) {
+                  log.info("Sent userId " + userId + " message " + message);
+                } else {
+                  log.error("Unable to mesage userId " + userId + ", error: " + JSON.stringify(res.body));
+                }
+              }
             });
-          });
+        });
+      });
     }
   });
 }
