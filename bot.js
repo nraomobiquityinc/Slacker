@@ -77,7 +77,6 @@ exports.processRequest = function processRequest(request, response) {
     team_domain: request.body.team_domain,
     team_id: request.body.team_id,
     text: requestText,
-    timestamp: request.body.timestamp,
     user_id: request.body.user_id,
     user_name: request.body.user_name,
     request_id: request.id

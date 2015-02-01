@@ -29,8 +29,9 @@ exports.start = function() {
     app.set('view options', {
       layout: 'layout'
     });
-    app.listen(process.env.PORT || config.port, function() {
-      log.info('listening on port ' + (process.env.PORT || config.port))
+    var nodePort = process.env.NODE_PORT || config.ports.nodePort;
+    app.listen(nodePort, function() {
+      log.info('listening on port ' + nodePort);
     });
   });
 }

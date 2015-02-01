@@ -14,7 +14,7 @@ if (cluster.isMaster) {
     }
 
     log.info('application started')
-    console.log('application started on port:', process.env.PORT || config.port)
+    console.log('application started on port:', process.env.NODE_PORT || config.ports.nodePort)
 
     var cores = os.cpus().length
     for (var x = 0; x < cores; x++)
@@ -29,6 +29,7 @@ if (cluster.isMaster) {
     cluster.on('online', function(worker) {
       log.info('worker' + worker.process.pid + ' came online')
     })
+
   })
 } else {
   worker.start();

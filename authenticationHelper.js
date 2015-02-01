@@ -9,102 +9,59 @@ var bot = require(__dirname + '/bot.js')
 var config = require(__dirname + '/library/config');
 var log = require(__dirname + '/library/log.js')
 var parse = require(__dirname + '/library/parse.js')
-var redis = require('redis');
-var redisClient = redis.createClient();
 var url = require('url');
 var request = require('superagent');
+var dao = require(__dirname + '/dao/dao.js');
+var models = require(__dirname + '/models/models.js');
 
 exports.checkUserIsAuthenticated = function(data, response, doIfAuthenticated) {
-  redisClient.hget(data.user_id, "accessToken", function(err, accessToken) {
-    if (err) {
-      log.error(err);
-      throw err;
-    } else {
-      if (accessToken === null) { //user is not authenticated
-        return authenticate(data, response);
-      } else {
-        data.accessToken = accessToken;
-        return doIfAuthenticated(data);
-      }
+  dao.getAccessTokenForUser(data.user_id, function(accessToken) {
+    if (accessToken) {
+      data.accessToken = accessToken;
+      return doIfAuthenticated(data);
+    } else { //user is not authenticated
+      return authenticate(data, response);
     }
   });
 }
 
 function authenticate(data, response) {
-  redisClient.hget(data.user_id, "queuedActions", function(err, pastQueuedActionsList) {
-    if (err) {
-      log.info("Something wasn't right with redis.");
-      console.error("Unable to get queuedActions from redis for user " + data.user_id);
-      throw err;
+  dao.getQueuedActionsForUser(data.user_id, function(pastQueuedActionsList) {
+    var actionData = {
+      userId: data.user_id,
+      timeStamp: new Date(Date.now()).toLocaleString(),
+      data: data
+    }
+
+    if (pastQueuedActionsList.length) {
+      //user has tried to issue an authenticated action in the past but has never authorized us
+      //enqueue this action and give him another chance to authorize us
+      var action = new models.Action(actionData);
+      dao.save(action, function(res) {
+        log.info("Updated user " + data.user_id + "'s queuedActions in Mongo");
+        dao.getStateForUser(data.user_id, function(oldState){
+          return createAuthorizeResponse(oldState, response);
+        })
+      });
     } else {
-      var actionData = {
-        "timeStamp": new Date(Date.now()).toLocaleString(),
-        "data": data
-      }
+      //user has never tried to issue an authenticated action before
+      var state = createStateNonce();
 
-      if (pastQueuedActionsList === null) {
-        //user has never tried to issue an authenticated action before
-        var state = createStateNonce();
+      var user = new models.User({
+        _id: data.user_id,
+        state: state,
+        teamDomain: data.team_domain,
+        teamID: data.team_id
+      });
 
-        var userState = {
-          "state": state,
-          "teamDomain": data.team_domain,
-          "teamID": data.team_id,
-          "queuedActions": JSON.stringify([actionData])
-        }
+      var action = new models.Action(actionData);
 
-        redisClient.hmset(data.user_id, userState, function(err, res) {
-          if (err) {
-            log.info("Something wasn't right with redis.");
-            console.error("Unable to save state to redis for user " + data.user_id);
-            throw err;
-          } else {
-            log.info("Added user " + data.user_id + " to redis");
-            saveState(state, response);
-          }
-        });
-      } else {
-        //user has tried to issue an authenticated action in the past but has never authorized us
-        //enqueue this action and give him another chance to authorize us
-        pastQueuedActionsList = JSON.parse(pastQueuedActionsList);
-        pastQueuedActionsList.push(actionData);
-        redisClient.hset(data.user_id, "queuedActions", JSON.stringify(pastQueuedActionsList), function(err, res) {
-          if (err) {
-            log.info("Something wasn't right with redis.");
-            console.error("Unable to update queuedActions in redis for user " + data.user_id);
-            throw err;
-          } else {
-            log.info("Updated user " + data.user_id + "'s queuedActions in redis");
-            redisClient.hget(data.user_id, "state", function(err, oldState) {
-              if (err) {
-                log.info("Something wasn't right with redis.");
-                console.error("Unable to retrieve old state from redis for user " + data.user_id);
-                throw err;
-              } else {
-                return createAuthorizeResponse(oldState, response);
-              }
-            });
-          }
-        });
-      }
+      dao.saveUserAndAction(user, action, function(res){
+        createAuthorizeResponse(state, response);
+      });
     }
   })
 };
-
-function saveState(state, response) {
-  redisClient.sadd(config.REDIS_VALID_AUTHS, state, function(err, stateAdded) {
-    if (err) {
-      log.info("Something wasn't right with redis.");
-      console.error("Unable to save state " + state);
-      throw err;
-    } else {
-      if (stateAdded) {
-        log.info("Added state " + state + " to redis");
-        return createAuthorizeResponse(state, response);
-      }
-    }
-  });
-}
 
 function createAuthorizeResponse(state, response) {
   response.statusCode = 200;
@@ -118,7 +75,7 @@ exports.handleOauthCallback = function(request, response) {
   request.url.parameters = request.url.query ? parse.httpParameters(request.url.query) : []
   if (request.url.parameters.error) {
     response.render('error', {
-      message: "Sorry, we cannot run commands without your authorization."
+      message: "Sorry, we cannot run your commands unless you authorize us."
     });
   } else {
     var state = request.url.parameters.state;
@@ -128,47 +85,25 @@ exports.handleOauthCallback = function(request, response) {
 }
 
 function checkStateIsValid(receivedState, code, response) {
-  redisClient.sismember(config.REDIS_VALID_AUTHS, receivedState, function(err, stateFound) {
-    if (err) {
-      log.info("Something wasn't right with redis.");
-      console.error("Unable to check set membership for state " + receivedState);
-      throw err;
-    }
-
-    if (stateFound) {
-      invalidateProcessedState(receivedState, code, response);
+  dao.getUserIdForState(receivedState, function(expectedUserId) {
+    if (expectedUserId) {
+      getNewAccessToken(code, expectedUserId, response);
     } else {
       response.statusCode = 400;
       response.render('error', {
-        message: "State " + receivedState + " was invalid"
+        message: "Invalid request with state " + receivedState
       });
     }
   });
 }
 
-function invalidateProcessedState(processedState, code, response) {
-  redisClient.srem(config.REDIS_VALID_AUTHS, processedState, function(err, stateDeleted) {
-    if (err) {
-      log.info("Something wasn't right with redis.");
-      console.error("Unable to check set membership for state " + processedState);
-      throw err;
-    }
-
-    if (stateDeleted) {
-      getNewAccessToken(code, response);
-    } else {
-      log.error('Unable to delete state ' + processedState + ' from redis');
-    }
-  })
-}
-
-function getNewAccessToken(code, response) {
+function getNewAccessToken(code, expectedUserId, response) {
   request
     .get("https://slack.com/api/oauth.access?" + "client_id=" + config.authClientId +
       "&client_secret=" + config.authClientSecret + "&code=" + code)
     .end(function(err, res) {
       if (res.ok && res.body && (res.body.ok === true)) {
-        return saveAccessToken(res.body.access_token, response);
+        return saveAccessToken(res.body.access_token, expectedUserId, response);
       } else {
         response.statusCode = 400;
         return response.render('error', {
@@ -178,88 +113,53 @@ function getNewAccessToken(code, response) {
     });
 }
 
+
 //TODO: add a slack command to revoke user's auth token
 //      this will clear any queued actions
 //      and clear user's saved accessToken
-function saveAccessToken(accessToken, response) {
+function saveAccessToken(accessToken, expectedUserId, response) {
   request
     .get("https://slack.com/api/auth.test?" + "token=" + accessToken)
     .end(function(err, res) {
       if (res.ok) {
         var userId = res.body.user_id;
-        redisClient.hset(userId, "accessToken", accessToken, function(err, res) {
-          if (err) {
-            log.info("Something wasn't right with redis.");
-            console.error("Unable to save accessToken for userId " + userId + " to redis");
-            throw err;
-          }
-          log.info("Updated user " + userId + "'s access token to " + accessToken);
-          displayAuthSuccessPage(accessToken, userId, response);
-        });
-      } else {
-        log.info("Could not query oauth.test for token: " + accessToken);
-      }
-    });
-}
-
-function displayAuthSuccessPage(accessToken, userId, response) {
-  request
-    .get("https://slack.com/api/auth.test?token=" + accessToken)
-    .end(function(err, res) {
-      if (err) {
-        log.info("Unable to fetch user name from Slack for user with id " + userId);
-        throw err;
-      } else {
-        if (res.ok && res.body && (res.body.ok === true)) {
-          var userName = res.body.user;
-          redisClient.hget(userId, "queuedActions", function(err, actions) {
-            if (err) {
-              log.info("Something wasn't right with redis.");
-              console.error("Unable to get queuedActions for userId " + userId + " from redis");
-              throw err;
-            } else {
-              var actions = JSON.parse(actions);
-              response.render('authSuccess', {
-                userId: userId,
-                userName: userName,
-                actionsList: actions
-              });
-            }
+        var userName = res.body.user;
+        if (userId === expectedUserId) {
+          dao.saveAccessTokenForUser(accessToken, userId, function(res) {
+            log.info("Updated user " + userId + "'s access token to " + accessToken);
+            displayAuthSuccessPage(userId, userName, response);
+          });
+        } else {
+          return response.render('error', {
+            message: 'Invalid state credentials provided for user ' + userName
           });
         }
       }
     });
 }
 
+function displayAuthSuccessPage(userId, userName, response) {
+  dao.getQueuedActionsForUser(userId, function(actions) {
+    response.render('authSuccess', {
+      userId: userId,
+      userName: userName,
+      actionsList: actions
+    });
+  });
+}
+
+
 /*
  * This function is only used right after authentication for the queued actions
  * that the user has chosen to run.
  */
 exports.performAuthenticatedActions = function(userId, selectedActionIndices, response) {
-  //fetch token and queuedActions
   var indices = selectedActionIndices;
-  redisClient.hget(userId, "queuedActions", function(err, actionsData) {
-    if (err) {
-      log.info("Something wasn't right with redis.");
-      console.error("Unable to get queuedActions for userId " + userId + " from redis");
-      throw err;
-    } else {
-      if (actionsData === null) {
-        response.statusCode = 400;
-        return response.render('error', {
-          message: "Your actions have already been processed."
-        });
-      }
-
-      actionsData = JSON.parse(actionsData);
-      redisClient.hdel(userId, "queuedActions", function(err, res) {
-        if (err) {
-          log.info("Something wasn't right with redis.");
-          console.error("Unable to delete queuedActions for userId " + userId + " from redis");
-          throw err;
-        } else {
-          _.forEach(indices, function(idx) {
-            var action = actionsData[idx];
+  dao.getQueuedActionsForUser(userId, function(actions) {
+    if (actions.length) {
+        dao.deleteActions(userId, function(res){});
+        _.forEach(indices, function(idx) {
+            var action = actions[idx];
             var command = _.clone(action.data.command);
             var data = action.data;
             bot.processCommand(command, data, response, function(message) {
@@ -278,8 +178,6 @@ exports.performAuthenticatedActions = function(userId, selectedActionIndices, re
                 });
             });
           });
-        }
-      });
     }
   });
 }

@@ -45,8 +45,8 @@
     "express-handlebars": "^1.1.0",
     "handlebars": "^2.0.0",
     "jquerygo": "0.0.16",
-    "lodash": "~2.4.1",
-    "redis": "0.12.1",
+    "lodash": "3.0.1",
+    "mongoose": "3.8",
     "slack-api": "^0.1.11",
     "slack-node": "0.0.9",
     "superagent": "0.21.0"
