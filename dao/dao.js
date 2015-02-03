@@ -1,5 +1,6 @@
 /*
- * Data Access Façade
+ * Data Access Façade for simplifying Mongo accesses
+ *
  * Mongoのレコードを更新と追加と削除するオペレーションを簡単に利用するための
  * ファサード実装。
  */
@@ -23,7 +24,7 @@ function getFieldForUser(fieldName, userId, callback) {
     .findById(userId)
     .select(fieldName)
     .exec(rightCurriedMongoCallback(function(user) {
-      if (user) callback(user[fieldName]);
+      if (user && user[fieldName]) callback(user[fieldName]);
       else callback(undefined);
     }));
 }
@@ -54,7 +55,8 @@ exports.getUserIdForState = function(state, callback) {
     })
     .select('_id')
     .exec(rightCurriedMongoCallback(function(user) {
-      callback(user['_id'])
+      if (user && user['_id']) callback(user['_id'])
+      else callback(undefined)
     }));
 }
 

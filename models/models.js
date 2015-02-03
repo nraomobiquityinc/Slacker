@@ -3,19 +3,17 @@ var log = require(__dirname + '/../library/log.js')
 var mongoose = require('mongoose');
 var Schema = mongoose.Schema;
 
-var mongoPort = process.env.MONGO_PORT || config.ports.mongoPort;
-mongoose.connect('mongodb://localhost:' + mongoPort + '/slacker', function(err, res) {
+mongoose.connect(config.mongoUrl, function(err, res) {
   if (err) {
     log.error('failed to connect to MongoDB');
     console.log('failed to connect to MongoDB');
     process.exit(1);
   } else {
-    log.info("connected to MongoDB on port: " + mongoPort);
-    console.log("connected to MongoDB on port:", mongoPort);
+    log.info("connected to MongoDB");
+    console.log("connected to MongoDB");
   }
 });
 
-//TODO: Schemaを確認する
 var actionSchema = new Schema({
   userId: {
     type: String,

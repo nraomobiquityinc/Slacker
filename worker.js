@@ -29,7 +29,7 @@ exports.start = function() {
     app.set('view options', {
       layout: 'layout'
     });
-    var nodePort = process.env.NODE_PORT || config.ports.nodePort;
+    var nodePort = process.env.PORT || config.port;
     app.listen(nodePort, function() {
       log.info('listening on port ' + nodePort);
     });

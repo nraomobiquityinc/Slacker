@@ -40,7 +40,14 @@ function authenticate(data, response) {
       dao.save(action, function(res) {
         log.info("Updated user " + data.user_id + "'s queuedActions in Mongo");
         dao.getStateForUser(data.user_id, function(oldState) {
-          return createAuthorizeResponse(oldState, response);
+          if (oldState) return createAuthorizeResponse(oldState, response);
+          else {
+            // this is only for the sake of completeness. This condition should
+            // never happen
+            response.render('error', {
+              message: "User " + data.user_id + " had no state saved"
+            })
+          }
         })
       });
     } else {
@@ -91,7 +98,7 @@ function checkStateIsValid(receivedState, code, response) {
     } else {
       response.statusCode = 400;
       response.render('error', {
-        message: "Invalid request with state " + receivedState
+        message: "Invalid state " + receivedState
       });
     }
   });
@@ -171,19 +178,11 @@ exports.performAuthenticatedActions = function(userId, selectedActionIndices, re
         var command = _.clone(action.data.command);
         var data = action.data;
         bot.processCommand(command, data, response, function(message) {
-          bot.sendMessage(message + "\n*Action command*: `" + command.name + "`" +
-            "\n*Action initially requested at*: " + action.timeStamp, userId,
-            function(err, res) {
-              if (err) {
-                console.error("Unable to message userId " + userId + ", error: " + err);
-              } else {
-                if (res.body.ok) {
-                  log.info("Sent userId " + userId + " message " + message);
-                } else {
-                  log.error("Unable to mesage userId " + userId + ", error: " + JSON.stringify(res.body));
-                }
-              }
-            });
+          var messageToSend = message + "\n*Action command*: `" + command.name + "`" +
+            "\n*Action initially requested at*: " + action.timeStamp;
+          bot.sendMessage(messageToSend, userId, function(res) {
+            log.info("Sent userId '" + userId + "' message: " + message);
+          });
         });
       });
     }

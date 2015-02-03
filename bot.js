@@ -235,9 +235,10 @@ exports.sendMessage = function(message, channel, callback) {
       text: message
     })
     .then(function(res) {
-      callback();
+      callback(res);
     })
     .catch(function(err) {
+      log.error("Unable to message " + channel + ", error: " + JSON.stringify(err));
       throw err;
     });
 };
