@@ -29,6 +29,7 @@ if (cluster.isMaster) {
     cluster.on('online', function(worker) {
       log.info('worker' + worker.process.pid + ' came online')
     })
+
   })
 } else {
   worker.start();

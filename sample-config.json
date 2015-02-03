@@ -1,5 +1,6 @@
 {
   "port": 80,
+  "mongoUrl": "mongodb://user:password@mongohost:mongoport/dbname",
   "logs": "logs",
   "token": {
     "slashCommand": "[Enter your Slash Command token here.]",

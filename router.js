@@ -17,8 +17,7 @@ router.route('*')
 
 router.route('/')
   .get(function(request, response) {
-    //TODO: add handlebar template for this error
-    response.end('Slacker is running.');
+    response.render('index');
   })
   .post(function(request, response) {
     if (request.body.command && request.body.token === config.token.slashCommand) {
@@ -36,9 +35,9 @@ router.get('/oauthcallback', function(request, response) {
 
 router.post('/:userId/runactions', function(request, response) {
   var userId = request.params.userId;
-  var selectedActionIndices = request.body;
+  var selectedActionIndices = request.body['selectedActionIndices[]'];
   authenticationHelper.performAuthenticatedActions(userId, selectedActionIndices, response);
-  return response.render('actionsDone');
+  response.end();
 });
 
 function connectDomainMiddleware(request, response, nextRequestHandler) {

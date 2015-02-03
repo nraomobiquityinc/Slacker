@@ -14,6 +14,8 @@ var parse = require(__dirname + '/library/parse.js');
 // Helpers
 var authenticationHelper = require(__dirname + '/authenticationHelper.js');
 
+var slackApi = require('slack-api').promisify();
+
 exports.actions = [];
 
 exports.setup = function setup(callback) {
@@ -77,7 +79,6 @@ exports.processRequest = function processRequest(request, response) {
     team_domain: request.body.team_domain,
     team_id: request.body.team_id,
     text: requestText,
-    timestamp: request.body.timestamp,
     user_id: request.body.user_id,
     user_name: request.body.user_name,
     request_id: request.id
@@ -228,14 +229,16 @@ exports.addAction = function(action) {
 //or ask him to authorize, if it doesn't exist
 exports.sendMessage = function(message, channel, callback) {
   callback = callback || function() {};
-  var messageData = {
-    token: config.token.user,
-    channel: channel,
-    text: message
-  };
-
-  var url = 'https://slack.com/api/chat.postMessage?' + querystring.stringify(messageData);
-  request
-    .get(url)
-    .end(callback);
+  slackApi.chat.postMessage({
+      token: config.token.user,
+      channel: channel,
+      text: message
+    })
+    .then(function(res) {
+      callback(res);
+    })
+    .catch(function(err) {
+      log.error("Unable to message " + channel + ", error: " + JSON.stringify(err));
+      throw err;
+    });
 };
