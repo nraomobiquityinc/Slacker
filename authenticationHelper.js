@@ -10,9 +10,9 @@ var config = require(__dirname + '/library/config');
 var log = require(__dirname + '/library/log.js')
 var parse = require(__dirname + '/library/parse.js')
 var url = require('url');
-var request = require('superagent');
 var dao = require(__dirname + '/dao/dao.js');
 var models = require(__dirname + '/models/models.js');
+var slackApi = require('slack-api').promisify();
 
 exports.checkUserIsAuthenticated = function(data, response, doIfAuthenticated) {
   dao.getAccessTokenForUser(data.user_id, function(accessToken) {
@@ -98,32 +98,37 @@ function checkStateIsValid(receivedState, code, response) {
 }
 
 function getNewAccessToken(code, expectedUserId, response) {
-  request
-    .get("https://slack.com/api/oauth.access?" + "client_id=" + config.authClientId +
-      "&client_secret=" + config.authClientSecret + "&code=" + code)
-    .end(function(err, res) {
-      if (res.ok && res.body && (res.body.ok === true)) {
-        return saveAccessToken(res.body.access_token, expectedUserId, response);
+  slackApi.oauth.access({
+      client_id: config.authClientId,
+      client_secret: config.authClientSecret,
+      code: code
+    })
+    .then(function(res) {
+      if (res.ok) {
+        return saveAccessToken(res.access_token, expectedUserId, response);
       } else {
         response.statusCode = 400;
         return response.render('error', {
           message: "Something went wrong with authentication."
         });
       }
+    })
+    .catch(function(err) {
+      throw err;
     });
 }
-
 
 //TODO: add a slack command to revoke user's auth token
 //      this will clear any queued actions
 //      and clear user's saved accessToken
 function saveAccessToken(accessToken, expectedUserId, response) {
-  request
-    .get("https://slack.com/api/auth.test?" + "token=" + accessToken)
-    .end(function(err, res) {
+  slackApi.auth.test({
+      token: accessToken
+    })
+    .then(function(res) {
       if (res.ok) {
-        var userId = res.body.user_id;
-        var userName = res.body.user;
+        var userId = res.user_id;
+        var userName = res.user;
         if (userId === expectedUserId) {
           dao.saveAccessTokenForUser(accessToken, userId, function(res) {
             log.info("Updated user " + userId + "'s access token to " + accessToken);
@@ -135,6 +140,9 @@ function saveAccessToken(accessToken, expectedUserId, response) {
           });
         }
       }
+    })
+    .catch(function(err) {
+      throw err;
     });
 }
 

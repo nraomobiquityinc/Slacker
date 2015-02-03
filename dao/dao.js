@@ -1,7 +1,7 @@
 /*
  * Data Access Façade
  * Mongoのレコードを更新と追加と削除するオペレーションを簡単に利用するための
- * ファサード処理。
+ * ファサード実装。
  */
 
 var _ = require('lodash');

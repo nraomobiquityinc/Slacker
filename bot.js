@@ -14,6 +14,8 @@ var parse = require(__dirname + '/library/parse.js');
 // Helpers
 var authenticationHelper = require(__dirname + '/authenticationHelper.js');
 
+var slackApi = require('slack-api').promisify();
+
 exports.actions = [];
 
 exports.setup = function setup(callback) {
@@ -227,14 +229,15 @@ exports.addAction = function(action) {
 //or ask him to authorize, if it doesn't exist
 exports.sendMessage = function(message, channel, callback) {
   callback = callback || function() {};
-  var messageData = {
-    token: config.token.user,
-    channel: channel,
-    text: message
-  };
-
-  var url = 'https://slack.com/api/chat.postMessage?' + querystring.stringify(messageData);
-  request
-    .get(url)
-    .end(callback);
+  slackApi.chat.postMessage({
+      token: config.token.user,
+      channel: channel,
+      text: message
+    })
+    .then(function(res) {
+      callback();
+    })
+    .catch(function(err) {
+      throw err;
+    });
 };
