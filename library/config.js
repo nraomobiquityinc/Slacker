@@ -14,7 +14,9 @@ if (!configExists) {
       "slashCommand": process.env.TOKEN_SLASH_COMMAND,
       "user": process.env.TOKEN_USER
     },
-    "timeout": 8000
+    "timeout": 8000,
+    "authClientId": process.env.SLACK_CLIENT_ID,
+    "authClientSecret": process.env.SLACK_CLIENT_SECRET
   };
 } else {
   config = require(__dirname + '/../config.json');

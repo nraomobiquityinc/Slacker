@@ -10,7 +10,7 @@ exports.start = function() {
   bot.setup(function(error) {
     if (error) {
       log.error('bot setup failed', error)
-      process.exit(config.BOT_START_FAILED)
+      process.exit(-1)
     }
 
     var app = express();

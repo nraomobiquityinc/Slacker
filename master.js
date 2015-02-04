@@ -22,7 +22,7 @@ if (cluster.isMaster) {
 
     cluster.on('exit', function(worker, code, signal) {
       log.error('worker' + worker.process.pid + ' exited', code || signal)
-      if (code !== config.BOT_START_FAILED)
+      if (code !== -1)
         cluster.fork()
     });
 

@@ -192,7 +192,7 @@ exports.performAuthenticatedActions = function(userId, selectedActionIndices, re
 function createStateNonce() {
   var ALLOWED_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_";
   var state = "";
-  for (var i = 0; i < config.STATE_NONCE_LENGTH; i++)
+  for (var i = 0; i < (config.STATE_NONCE_LENGTH || 8); i++)
     state += ALLOWED_CHARS.charAt(Math.random() * ALLOWED_CHARS.length);
   return state;
 }
