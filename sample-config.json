@@ -7,6 +7,6 @@
     "user": "[Enter your User token here.]"
   },
   "timeout": 8000,
-  "authClientId": "3354088279.3451844851",
-  "authClientSecret": "ed4de57b959a06ca0d4feecedc950358"
+  "authClientId": "[Enter your application client id from Slack]",
+  "authClientSecret": "[Enter your application client secret from Slack]"
 }
